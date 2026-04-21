@@ -4,6 +4,8 @@ pub mod v1 {
     tonic::include_proto!("quote_ledger.v1");
 }
 
+pub mod domain;
+
 use std::pin::Pin;
 
 use tokio_stream::Stream;

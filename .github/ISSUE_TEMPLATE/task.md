@@ -1,8 +1,8 @@
 ---
-name: Task
+name: Story / Task
 about: Scoped unit of work with requirements, acceptance criteria, edge cases, and QA
-title: "[EPIC-ID] Short imperative title"
-labels: []
+title: "[A-01] Short imperative title"
+labels: ["type/story"]
 assignees: []
 ---
 

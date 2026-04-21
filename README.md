@@ -1,0 +1,38 @@
+# quote-ledger
+
+Append-only **quote** ledger: commands become persisted events; clients **subscribe** over gRPC for snapshot + live tail. SQLite for storage. Rust + **tonic** + Protocol Buffers.
+
+## Planning (GitHub Issues)
+
+Work is tracked as **Issues** grouped by **Milestones** (one milestone per epic).
+
+- [Open issues](https://github.com/jparrott06/quote-ledger/issues)
+- Use **Issues → Milestones** to view epics (e.g. **Epic A — Domain model**).
+
+Use the **Story / Task** or **Epic** templates when filing new work.
+
+## Build
+
+Needs Rust **1.86+** (see `rust-toolchain.toml`).
+
+```bash
+cargo fmt --all
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all
+cargo build --release
+```
+
+Run the gRPC server (creates/applies SQLite migrations):
+
+```bash
+export QUOTE_LEDGER_DB="${TMPDIR:-/tmp}/quote_ledger.db"
+cargo run -- 127.0.0.1:50051
+```
+
+## CI
+
+Pull requests run **fmt**, **clippy**, **test** (includes gRPC smoke), and **release-build-smoke**. Configure branch protection to require those checks before merging to `main`.
+
+## License
+
+MIT OR Apache-2.0 (SPDX).

@@ -8,6 +8,7 @@ Work is tracked as **Issues** grouped by **Milestones** (one milestone per epic)
 
 - [Open issues](https://github.com/jparrott06/quote-ledger/issues)
 - Use **Issues → Milestones** to view epics (e.g. **Epic A — Domain model**).
+- Epic A bootstrap stories: [#1](https://github.com/jparrott06/quote-ledger/issues/1), [#2](https://github.com/jparrott06/quote-ledger/issues/2), [#3](https://github.com/jparrott06/quote-ledger/issues/3), [#4](https://github.com/jparrott06/quote-ledger/issues/4).
 
 Use the **Story / Task** or **Epic** templates when filing new work.
 

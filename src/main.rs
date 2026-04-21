@@ -17,10 +17,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .parse()?;
 
     let db_path = std::env::var("QUOTE_LEDGER_DB").unwrap_or_else(|_| "quote_ledger.db".into());
-    let _conn = sqlite::open_and_migrate(&db_path)?;
+    let conn = sqlite::open_and_migrate(&db_path)?;
     tracing::info!(path = %db_path, "sqlite ready");
 
-    let service = grpc_server(LedgerService);
+    let service = grpc_server(LedgerService::new(conn));
 
     tracing::info!(%addr, "quote_ledger listening");
 

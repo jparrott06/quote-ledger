@@ -2,6 +2,12 @@
 
 Append-only **quote** ledger: commands become persisted events; clients **subscribe** over gRPC for snapshot + live tail. SQLite for storage. Rust + **tonic** + Protocol Buffers.
 
+## What works today
+
+- **Domain**: pure reducer + `CreateQuote` command validation (`src/domain`).
+- **Persistence**: SQLite `events` + `idempotency_keys`, `seq` per `quote_id` (`src/store.rs`).
+- **gRPC**: `AppendCommands` (client streaming) commits commands; `SubscribeQuote` (server streaming) emits catch-up **tail** (if needed), a **snapshot**, then live **tails** driven by `watch` + DB reads (`src/ledger.rs`).
+
 ## Planning (GitHub Issues)
 
 Work is tracked as **Issues** grouped by **Milestones** (one milestone per epic).

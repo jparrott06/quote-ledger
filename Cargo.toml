@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 prost = "0.13"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-stream = { version = "0.1", features = ["net", "sync"] }
 tonic = { version = "0.12", features = ["transport"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -18,3 +18,6 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 [build-dependencies]
 tonic-build = "0.12"
 protoc-bin-vendored = "3"
+
+[dev-dependencies]
+tempfile = "3"

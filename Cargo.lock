@@ -797,6 +797,7 @@ dependencies = [
  "prost",
  "protoc-bin-vendored",
  "rusqlite",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tonic",

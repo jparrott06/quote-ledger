@@ -1,45 +1,6 @@
-use std::pin::Pin;
+use tonic::transport::Server;
 
-use tokio_stream::Stream;
-use tonic::{transport::Server, Request, Response, Status};
-
-pub mod sqlite;
-
-mod quote_ledger {
-    tonic::include_proto!("quote_ledger.v1");
-}
-
-use quote_ledger::quote_ledger_service_server::{QuoteLedgerService, QuoteLedgerServiceServer};
-use quote_ledger::{
-    AppendCommandRequest, AppendCommandsResponse, QuoteUpdate, SubscribeQuoteRequest,
-};
-
-#[derive(Default)]
-struct LedgerService;
-
-#[tonic::async_trait]
-impl QuoteLedgerService for LedgerService {
-    async fn append_commands(
-        &self,
-        _request: Request<tonic::Streaming<AppendCommandRequest>>,
-    ) -> Result<Response<AppendCommandsResponse>, Status> {
-        Err(Status::unimplemented(
-            "append_commands will validate, persist, and assign seq (see project epics)",
-        ))
-    }
-
-    type SubscribeQuoteStream =
-        Pin<Box<dyn Stream<Item = Result<QuoteUpdate, Status>> + Send + 'static>>;
-
-    async fn subscribe_quote(
-        &self,
-        _request: Request<SubscribeQuoteRequest>,
-    ) -> Result<Response<Self::SubscribeQuoteStream>, Status> {
-        Err(Status::unimplemented(
-            "subscribe_quote will snapshot then tail with after_seq replay",
-        ))
-    }
-}
+use quote_ledger::{grpc_server, sqlite, LedgerService};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -59,14 +20,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _conn = sqlite::open_and_migrate(&db_path)?;
     tracing::info!(path = %db_path, "sqlite ready");
 
-    let service = LedgerService::default();
+    let service = grpc_server(LedgerService);
 
     tracing::info!(%addr, "quote_ledger listening");
 
-    Server::builder()
-        .add_service(QuoteLedgerServiceServer::new(service))
-        .serve(addr)
-        .await?;
+    Server::builder().add_service(service).serve(addr).await?;
 
     Ok(())
 }

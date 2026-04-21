@@ -1,0 +1,20 @@
+[package]
+name = "quote_ledger"
+version = "0.1.0"
+edition = "2021"
+description = "Append-only quote ledger with gRPC streaming"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+prost = "0.13"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tonic = { version = "0.12", features = ["transport"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[build-dependencies]
+tonic-build = "0.12"
+protoc-bin-vendored = "3"

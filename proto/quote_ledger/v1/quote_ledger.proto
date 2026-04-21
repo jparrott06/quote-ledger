@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package quote_ledger.v1;
+
+// Append-only quote ledger: commands become persisted events; subscribers
+// receive snapshots and tail updates (implemented in later tickets).
+
+service QuoteLedgerService {
+  // Client-streaming: batch commands with flow control from client pacing.
+  rpc AppendCommands(stream AppendCommandRequest) returns (AppendCommandsResponse);
+
+  // Server-streaming: snapshot then live tail; clients reconnect with after_seq.
+  rpc SubscribeQuote(SubscribeQuoteRequest) returns (stream QuoteUpdate);
+}
+
+message AppendCommandRequest {
+  string client_command_id = 1;
+  string quote_id = 2;
+  QuoteCommand command = 3;
+}
+
+message AppendCommandsResponse {
+  uint64 last_committed_seq = 1;
+  repeated StoredEvent committed = 2;
+}
+
+message SubscribeQuoteRequest {
+  string quote_id = 1;
+  // If zero, server sends full snapshot from seq 1.
+  uint64 after_seq = 2;
+}
+
+message QuoteUpdate {
+  oneof kind {
+    QuoteSnapshot snapshot = 1;
+    QuoteTail tail = 2;
+  }
+}
+
+message QuoteSnapshot {
+  uint64 last_seq = 1;
+  QuoteView view = 2;
+}
+
+message QuoteTail {
+  uint64 from_seq_exclusive = 1;
+  uint64 to_seq_inclusive = 2;
+  repeated StoredEvent events = 3;
+}
+
+message StoredEvent {
+  uint64 seq = 1;
+  string quote_id = 2;
+  QuoteEvent event = 3;
+}
+
+message QuoteCommand {
+  oneof kind {
+    CreateQuote create_quote = 1;
+  }
+}
+
+message QuoteEvent {
+  oneof kind {
+    QuoteCreated quote_created = 1;
+  }
+}
+
+message CreateQuote {
+  string currency_code = 1;
+  string jurisdiction_id = 2;
+}
+
+message QuoteCreated {
+  string currency_code = 1;
+  string jurisdiction_id = 2;
+}
+
+message QuoteView {
+  string quote_id = 1;
+  string currency_code = 2;
+  string jurisdiction_id = 3;
+  bool finalized = 4;
+}

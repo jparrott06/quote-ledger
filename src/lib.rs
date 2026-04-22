@@ -15,7 +15,7 @@ mod store;
 
 pub use auth::AuthInterceptor;
 pub use error::StoreError;
-pub use ledger::{grpc_server, LedgerService};
+pub use ledger::{grpc_server, LedgerService, ReliabilityLimits};
 
 /// gRPC reflection (`grpcurl` / Postman) — generated in `build.rs`.
 pub const FILE_DESCRIPTOR_SET: &[u8] =

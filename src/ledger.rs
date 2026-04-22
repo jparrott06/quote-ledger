@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use metrics::{counter, gauge, histogram};
 use tokio::sync::mpsc;
@@ -27,6 +27,8 @@ use crate::v1::{
 };
 
 const MAX_ID_LEN: usize = 128;
+const DEFAULT_APPEND_IDLE_TIMEOUT_MS: u64 = 10_000;
+const DEFAULT_APPEND_MAX_COMMANDS: usize = 512;
 
 fn validate_identifier(field: &'static str, value: &str) -> Result<(), Status> {
     if value.trim().is_empty() {
@@ -87,6 +89,21 @@ impl Drop for AppendOneLatency {
     fn drop(&mut self) {
         histogram!("quote_ledger_append_one_duration_seconds")
             .record(self.0.elapsed().as_secs_f64());
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ReliabilityLimits {
+    pub append_idle_timeout: Duration,
+    pub append_max_commands: usize,
+}
+
+impl Default for ReliabilityLimits {
+    fn default() -> Self {
+        Self {
+            append_idle_timeout: Duration::from_millis(DEFAULT_APPEND_IDLE_TIMEOUT_MS),
+            append_max_commands: DEFAULT_APPEND_MAX_COMMANDS,
+        }
     }
 }
 
@@ -186,12 +203,18 @@ impl LedgerInner {
 
 pub struct LedgerService {
     pub(crate) inner: Arc<LedgerInner>,
+    reliability: ReliabilityLimits,
 }
 
 impl LedgerService {
     pub fn new(conn: rusqlite::Connection) -> Self {
+        Self::with_reliability(conn, ReliabilityLimits::default())
+    }
+
+    pub fn with_reliability(conn: rusqlite::Connection, reliability: ReliabilityLimits) -> Self {
         Self {
             inner: Arc::new(LedgerInner::new(conn)),
+            reliability,
         }
     }
 
@@ -215,13 +238,36 @@ impl QuoteLedgerService for LedgerService {
         let mut quote_id: Option<String> = None;
         let mut last_committed_seq: u64 = 0;
         let mut all_committed: Vec<StoredEvent> = Vec::new();
+        let mut command_count: usize = 0;
 
         loop {
-            let msg = match stream.message().await {
-                Ok(Some(m)) => m,
-                Ok(None) => break,
-                Err(e) => return Err(e),
+            let msg = match tokio::time::timeout(
+                self.reliability.append_idle_timeout,
+                stream.message(),
+            )
+            .await
+            {
+                Ok(Ok(Some(m))) => m,
+                Ok(Ok(None)) => break,
+                Ok(Err(e)) => return Err(e),
+                Err(_) => {
+                    counter!("quote_ledger_append_commands_streams_total", "result" => "timeout")
+                        .increment(1);
+                    return Err(Status::deadline_exceeded(
+                        "append_commands stream idle timeout",
+                    ));
+                }
             };
+
+            command_count += 1;
+            if command_count > self.reliability.append_max_commands {
+                counter!("quote_ledger_append_commands_streams_total", "result" => "too_many")
+                    .increment(1);
+                return Err(Status::resource_exhausted(format!(
+                    "append_commands stream exceeds max {} commands",
+                    self.reliability.append_max_commands
+                )));
+            }
 
             validate_identifier("client_command_id", &msg.client_command_id)?;
             validate_identifier("quote_id", &msg.quote_id)?;

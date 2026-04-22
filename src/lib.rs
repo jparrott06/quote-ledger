@@ -14,3 +14,7 @@ mod store;
 
 pub use error::StoreError;
 pub use ledger::{grpc_server, LedgerService};
+
+/// gRPC reflection (`grpcurl` / Postman) — generated in `build.rs`.
+pub const FILE_DESCRIPTOR_SET: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/quote_ledger_descriptor.bin"));

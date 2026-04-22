@@ -1,6 +1,7 @@
 # CI for every PR and pushes to main. Enforce merge gate in GitHub:
 # Settings → Branches → Branch protection → Require status checks:
 #   fmt, clippy, test, release-build-smoke
+# Optional: require `coverage` once you are happy with llvm-cov noise/runtime.
 name: CI
 
 on:
@@ -47,3 +48,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.86.0
       - run: cargo build --release
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.86.0
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: llvm-cov summary
+        run: cargo llvm-cov test --workspace --all-features --summary-only

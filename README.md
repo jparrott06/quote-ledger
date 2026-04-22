@@ -39,7 +39,26 @@ cargo run -- 127.0.0.1:50051
 
 ## CI
 
-Pull requests run **fmt**, **clippy**, **test** (includes gRPC smoke), and **release-build-smoke**. Configure branch protection to require those checks before merging to `main`.
+Pull requests run **fmt**, **clippy**, **test** (includes gRPC smoke), **release-build-smoke**, and a **`coverage`** job that prints an **llvm-cov** summary (line/region totals — informational unless you add a threshold).
+
+Configure branch protection to require the first four checks before merging to `main`. Add `coverage` when you want PRs blocked on the summary existing (it does not upload to Codecov unless you wire that in).
+
+## Coverage (honest picture)
+
+- **Strengths:** domain logic has focused **unit tests**; **integration tests** cover subscribe (empty), append+idempotency, and a full **pricing/finalize** path against a real SQLite DB + tonic server.
+- **Gaps:** no property/fuzz tests yet; no load or fault-injection tests; **no enforced line-coverage floor** in CI (the `coverage` job reports numbers only).
+- **Local:** `cargo install cargo-llvm-cov` then `cargo llvm-cov test --workspace --all-features --html` for an HTML report.
+
+## grpcurl (reflection)
+
+The server registers **gRPC reflection** (descriptor set from `build.rs`). With `grpcurl`:
+
+```bash
+grpcurl -plaintext localhost:50051 list
+grpcurl -plaintext localhost:50051 describe quote_ledger.v1.QuoteLedgerService
+```
+
+The server shuts down cleanly on **Ctrl+C** (`serve_with_shutdown`).
 
 ## License
 

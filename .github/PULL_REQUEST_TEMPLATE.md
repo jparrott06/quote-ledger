@@ -23,4 +23,6 @@ Ensure **branch protection** on `main` requires these checks before merge:
 
 `fmt`, `clippy`, `test`, `release-build-smoke`
 
+Optional (recommended once stable): also require `coverage` (llvm-cov summary on every PR).
+
 GitHub: **Settings → Branches → Edit rule** → *Require status checks to pass* → select all four job names from this repo’s CI workflow.

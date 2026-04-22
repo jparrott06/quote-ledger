@@ -1,6 +1,7 @@
 use tonic::transport::Server;
+use tonic_reflection::server::Builder as ReflectionBuilder;
 
-use quote_ledger::{grpc_server, sqlite, LedgerService};
+use quote_ledger::{grpc_server, sqlite, LedgerService, FILE_DESCRIPTOR_SET};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -20,11 +21,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let conn = sqlite::open_and_migrate(&db_path)?;
     tracing::info!(path = %db_path, "sqlite ready");
 
-    let service = grpc_server(LedgerService::new(conn));
+    let ledger = grpc_server(LedgerService::new(conn));
 
-    tracing::info!(%addr, "quote_ledger listening");
+    let reflection = ReflectionBuilder::configure()
+        .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
+        .build_v1()?;
 
-    Server::builder().add_service(service).serve(addr).await?;
+    tracing::info!(%addr, "quote_ledger listening (reflection enabled for grpcurl)");
 
+    Server::builder()
+        .add_service(reflection)
+        .add_service(ledger)
+        .serve_with_shutdown(addr, shutdown_signal())
+        .await?;
+
+    tracing::info!("shutdown complete");
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let _ = tokio::signal::ctrl_c().await;
+    tracing::info!("shutdown signal received");
 }

@@ -3,7 +3,7 @@ syntax = "proto3";
 package quote_ledger.v1;
 
 // Append-only quote ledger: commands become persisted events; subscribers
-// receive snapshots and tail updates (implemented in later tickets).
+// receive snapshots and tail updates.
 
 service QuoteLedgerService {
   // Client-streaming: batch commands with flow control from client pacing.
@@ -57,12 +57,16 @@ message StoredEvent {
 message QuoteCommand {
   oneof kind {
     CreateQuote create_quote = 1;
+    AddLineItem add_line_item = 2;
+    FinalizeQuote finalize_quote = 3;
   }
 }
 
 message QuoteEvent {
   oneof kind {
     QuoteCreated quote_created = 1;
+    LineItemAdded line_item_added = 2;
+    QuoteFinalized quote_finalized = 3;
   }
 }
 
@@ -76,9 +80,42 @@ message QuoteCreated {
   string jurisdiction_id = 2;
 }
 
+message AddLineItem {
+  string line_id = 1;
+  string sku = 2;
+  string description = 3;
+  int64 quantity = 4;
+  int64 unit_minor = 5;
+}
+
+message LineItemAdded {
+  string line_id = 1;
+  string sku = 2;
+  string description = 3;
+  int64 quantity = 4;
+  int64 unit_minor = 5;
+}
+
+message FinalizeQuote {}
+
+message QuoteFinalized {}
+
+message LineItemView {
+  string line_id = 1;
+  string sku = 2;
+  string description = 3;
+  int64 quantity = 4;
+  int64 unit_minor = 5;
+  int64 line_total_minor = 6;
+}
+
 message QuoteView {
   string quote_id = 1;
   string currency_code = 2;
   string jurisdiction_id = 3;
   bool finalized = 4;
+  int64 subtotal_minor = 5;
+  int64 tax_minor = 6;
+  int64 total_minor = 7;
+  repeated LineItemView line_items = 8;
 }

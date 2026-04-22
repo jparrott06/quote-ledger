@@ -220,7 +220,7 @@ impl QuoteLedgerService for LedgerService {
                     }
 
                     let state = replay_stored_to_state(&all)?;
-                    let view = quote_state_to_view(&quote_id, &state);
+                    let view = quote_state_to_view(&quote_id, &state)?;
                     let catchup = if after < last {
                         store::load_stored_events_between(c, &quote_id, after, last)?
                     } else {

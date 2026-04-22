@@ -59,6 +59,10 @@ async fn subscribe_quote_empty_snapshot_smoke() {
             assert_eq!(v.currency_code, "");
             assert_eq!(v.jurisdiction_id, "");
             assert!(!v.finalized);
+            assert_eq!(v.subtotal_minor, 0);
+            assert_eq!(v.tax_minor, 0);
+            assert_eq!(v.total_minor, 0);
+            assert!(v.line_items.is_empty());
         }
         UpdateKind::Tail(_) => panic!("unexpected tail on empty quote"),
     }

@@ -83,6 +83,8 @@ fn load_events_in_seq_range(
 fn event_type_for(ev: &QuoteEvent) -> &'static str {
     match ev.kind {
         Some(crate::v1::quote_event::Kind::QuoteCreated(_)) => "quote_created",
+        Some(crate::v1::quote_event::Kind::LineItemAdded(_)) => "line_item_added",
+        Some(crate::v1::quote_event::Kind::QuoteFinalized(_)) => "quote_finalized",
         None => "unknown",
     }
 }

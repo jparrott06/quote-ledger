@@ -113,6 +113,10 @@ async fn append_then_subscribe_snapshot() {
                 assert_eq!(v.quote_id, quote_id);
                 assert_eq!(v.currency_code, "USD");
                 assert_eq!(v.jurisdiction_id, "US-CA");
+                assert_eq!(v.subtotal_minor, 0);
+                assert_eq!(v.tax_minor, 0);
+                assert_eq!(v.total_minor, 0);
+                assert!(v.line_items.is_empty());
                 saw_snapshot = true;
                 break;
             }

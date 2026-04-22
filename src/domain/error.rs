@@ -9,4 +9,25 @@ pub enum DomainError {
 
     #[error("invalid field: {field}")]
     InvalidField { field: &'static str },
+
+    #[error("quote must be created before this operation")]
+    QuoteNotCreated,
+
+    #[error("quote is finalized and cannot be modified")]
+    QuoteAlreadyFinalized,
+
+    #[error("line_id already exists on this quote")]
+    DuplicateLineId,
+
+    #[error("quantity must be positive")]
+    InvalidQuantity,
+
+    #[error("unit_minor must be non-negative")]
+    InvalidUnitMinor,
+
+    #[error("integer overflow in money math")]
+    IntegerOverflow,
+
+    #[error("finalize requires at least one line item")]
+    CannotFinalizeWithoutLines,
 }

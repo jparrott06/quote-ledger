@@ -4,9 +4,10 @@ Append-only **quote** ledger: commands become persisted events; clients **subscr
 
 ## What works today
 
-- **Domain**: pure reducer + `CreateQuote` command validation (`src/domain`).
+- **Domain**: pure reducer; `CreateQuote`, `AddLineItem`, `FinalizeQuote`; deterministic **subtotal / tax / total** in minor units (`src/domain`).
+- **Tax stub**: `US` and `US-*` jurisdictions use **800 bps** (8%); others **0**.
 - **Persistence**: SQLite `events` + `idempotency_keys`, `seq` per `quote_id` (`src/store.rs`).
-- **gRPC**: `AppendCommands` (client streaming) commits commands; `SubscribeQuote` (server streaming) emits catch-up **tail** (if needed), a **snapshot**, then live **tails** driven by `watch` + DB reads (`src/ledger.rs`).
+- **gRPC**: `AppendCommands` (client streaming) commits commands; `SubscribeQuote` (server streaming) emits catch-up **tail** (if needed), a **snapshot** (includes `line_items` + totals), then live **tails** driven by `watch` + DB reads (`src/ledger.rs`).
 
 ## Planning (GitHub Issues)
 

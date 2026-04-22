@@ -7,7 +7,7 @@ mod error;
 mod model;
 
 pub use error::DomainError;
-pub use model::{DomainCommand, DomainEvent, QuoteState};
+pub use model::{DomainCommand, DomainEvent, LineItemState, QuoteState};
 
 /// Apply a single committed event to the current state (event sourcing replay / tail apply).
 pub fn reduce(state: &QuoteState, event: &DomainEvent) -> Result<QuoteState, DomainError> {
@@ -116,5 +116,62 @@ mod tests {
                 field: "currency_code"
             }
         );
+    }
+
+    fn state_after_create() -> QuoteState {
+        reduce(&QuoteState::default(), &created()).unwrap()
+    }
+
+    #[test]
+    fn add_line_then_totals_us_tax() {
+        let s0 = state_after_create();
+        let ev = DomainEvent::LineItemAdded {
+            line_id: "L1".into(),
+            sku: "SKU".into(),
+            description: "Widget".into(),
+            quantity: 2,
+            unit_minor: 5_000,
+        };
+        let s1 = reduce(&s0, &ev).unwrap();
+        assert_eq!(s1.subtotal_minor().unwrap(), 10_000);
+        assert_eq!(s1.tax_minor().unwrap(), 800);
+        assert_eq!(s1.total_minor().unwrap(), 10_800);
+    }
+
+    #[test]
+    fn finalize_requires_line() {
+        let s = state_after_create();
+        let err = command_to_events(&s, &DomainCommand::FinalizeQuote).unwrap_err();
+        assert_eq!(err, DomainError::CannotFinalizeWithoutLines);
+    }
+
+    #[test]
+    fn finalize_sets_flag() {
+        let s0 = state_after_create();
+        let s1 = reduce(
+            &s0,
+            &DomainEvent::LineItemAdded {
+                line_id: "L1".into(),
+                sku: "SKU".into(),
+                description: "Widget".into(),
+                quantity: 1,
+                unit_minor: 100,
+            },
+        )
+        .unwrap();
+        let s2 = reduce(&s1, &DomainEvent::QuoteFinalized).unwrap();
+        assert!(s2.finalized);
+        let err = command_to_events(
+            &s2,
+            &DomainCommand::AddLineItem {
+                line_id: "L2".into(),
+                sku: "SKU".into(),
+                description: "Nope".into(),
+                quantity: 1,
+                unit_minor: 1,
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err, DomainError::QuoteAlreadyFinalized);
     }
 }

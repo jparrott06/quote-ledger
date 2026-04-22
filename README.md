@@ -9,15 +9,20 @@ Append-only **quote** ledger: commands become persisted events; clients **subscr
 - **Persistence**: SQLite `events` + `idempotency_keys`, `seq` per `quote_id` (`src/store.rs`).
 - **gRPC**: `AppendCommands` (client streaming) commits commands; `SubscribeQuote` (server streaming) emits catch-up **tail** (if needed), a **snapshot** (includes `line_items` + totals), then live **tails** driven by `watch` + DB reads (`src/ledger.rs`).
 
-## Planning (GitHub Issues)
+## Planning (GitHub Issues & Milestones)
 
-Work is tracked as **Issues** grouped by **Milestones** (one milestone per epic).
+Work is tracked as **Issues** grouped by **[Milestones](https://github.com/jparrott06/quote-ledger/milestones)** (one milestone per epic).
+
+**v1 epics (closed):** Epic A — domain model; Epic B — SQLite event store; Epic C — `AppendCommands`; Epic D — `SubscribeQuote`; Epic E — line items, tax, finalize; Epic F — DX, CI, observability. Issue [#5](https://github.com/jparrott06/quote-ledger/issues/5) is the umbrella ship item for Epics B–D (see its milestone comment).
 
 - [Open issues](https://github.com/jparrott06/quote-ledger/issues)
-- Use **Issues → Milestones** to view epics (e.g. **Epic A — Domain model**).
 - Epic A bootstrap stories: [#1](https://github.com/jparrott06/quote-ledger/issues/1), [#2](https://github.com/jparrott06/quote-ledger/issues/2), [#3](https://github.com/jparrott06/quote-ledger/issues/3), [#4](https://github.com/jparrott06/quote-ledger/issues/4).
 
 Use the **Story / Task** or **Epic** templates when filing new work.
+
+## Releases
+
+**[v1.0.0](https://github.com/jparrott06/quote-ledger/releases/tag/v1.0.0)** — first tagged **vertical slice**: domain through SQLite persistence, gRPC append/subscribe, pricing/finalize, reflection/CI, and Prometheus metrics + bounded append drain on shutdown. The crate version matches the tag; the package remains `publish = false` until you opt into crates.io.
 
 ## Build
 

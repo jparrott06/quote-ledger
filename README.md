@@ -43,6 +43,12 @@ export QUOTE_LEDGER_DB="${TMPDIR:-/tmp}/quote_ledger.db"
 export METRICS_ADDR=127.0.0.1:9090
 # Optional: require `authorization: Bearer <token>` on ledger RPCs
 export QUOTE_LEDGER_AUTH_TOKEN=dev-local-token
+# Reliability defaults (optional overrides shown)
+export APPEND_IDLE_TIMEOUT_MS=10000
+export APPEND_MAX_COMMANDS=512
+export GRPC_CONCURRENCY_LIMIT=128
+export GRPC_KEEPALIVE_INTERVAL_MS=30000
+export GRPC_KEEPALIVE_TIMEOUT_MS=10000
 cargo run -- 127.0.0.1:50051
 ```
 
@@ -64,6 +70,17 @@ When `QUOTE_LEDGER_AUTH_TOKEN` is set, `AppendCommands` and `SubscribeQuote` req
 ### Shutdown
 
 On **Ctrl+C**, the gRPC server does **not** begin tonic shutdown until **in-flight `append_one` calls** drop to zero, or **30 seconds** elapse (whichever comes first). After that, `serve_with_shutdown` completes and the process exits.
+
+### Reliability limits
+
+- `APPEND_IDLE_TIMEOUT_MS` (default `10000`): if an `AppendCommands` stream is idle too long between frames, the call fails with `DEADLINE_EXCEEDED`.
+- `APPEND_MAX_COMMANDS` (default `512`): caps command count per `AppendCommands` stream; overflow fails with `RESOURCE_EXHAUSTED`.
+- `GRPC_CONCURRENCY_LIMIT` (default `128`): max concurrent RPCs per connection.
+- `GRPC_KEEPALIVE_INTERVAL_MS` / `GRPC_KEEPALIVE_TIMEOUT_MS` (defaults `30000` / `10000`): HTTP/2 keepalive policy.
+
+### Retry semantics
+
+`AppendCommands` is safe to retry for transient transport failures when each command keeps the same `(quote_id, client_command_id)` pair. The service deduplicates by that idempotency key and returns the already committed events.
 
 ## CI
 

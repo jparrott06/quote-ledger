@@ -26,6 +26,33 @@ use crate::v1::{
     QuoteTail, QuoteUpdate, StoredEvent, SubscribeQuoteRequest,
 };
 
+const MAX_ID_LEN: usize = 128;
+
+fn validate_identifier(field: &'static str, value: &str) -> Result<(), Status> {
+    if value.trim().is_empty() {
+        return Err(Status::invalid_argument(format!("{field} is required")));
+    }
+    if value.len() > MAX_ID_LEN {
+        return Err(Status::invalid_argument(format!(
+            "{field} exceeds {MAX_ID_LEN} characters"
+        )));
+    }
+    if value != value.trim() {
+        return Err(Status::invalid_argument(format!(
+            "{field} must not contain leading/trailing spaces"
+        )));
+    }
+    let valid = value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'));
+    if !valid {
+        return Err(Status::invalid_argument(format!(
+            "{field} contains invalid characters"
+        )));
+    }
+    Ok(())
+}
+
 struct InFlightGuard {
     counter: Arc<AtomicUsize>,
 }
@@ -196,11 +223,8 @@ impl QuoteLedgerService for LedgerService {
                 Err(e) => return Err(e),
             };
 
-            if msg.client_command_id.is_empty() || msg.quote_id.is_empty() {
-                return Err(Status::invalid_argument(
-                    "client_command_id and quote_id are required",
-                ));
-            }
+            validate_identifier("client_command_id", &msg.client_command_id)?;
+            validate_identifier("quote_id", &msg.quote_id)?;
 
             match &quote_id {
                 None => quote_id = Some(msg.quote_id.clone()),
@@ -252,9 +276,7 @@ impl QuoteLedgerService for LedgerService {
         request: Request<SubscribeQuoteRequest>,
     ) -> Result<Response<Self::SubscribeQuoteStream>, Status> {
         let req = request.into_inner();
-        if req.quote_id.is_empty() {
-            return Err(Status::invalid_argument("quote_id is required"));
-        }
+        validate_identifier("quote_id", &req.quote_id)?;
 
         counter!("quote_ledger_subscribe_streams_total").increment(1);
         let inner = self.inner.clone();

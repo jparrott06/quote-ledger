@@ -41,6 +41,8 @@ Run the gRPC server (creates/applies SQLite migrations):
 export QUOTE_LEDGER_DB="${TMPDIR:-/tmp}/quote_ledger.db"
 # Optional: Prometheus scrape endpoint (default 127.0.0.1:9090)
 export METRICS_ADDR=127.0.0.1:9090
+# Optional: require `authorization: Bearer <token>` on ledger RPCs
+export QUOTE_LEDGER_AUTH_TOKEN=dev-local-token
 cargo run -- 127.0.0.1:50051
 ```
 
@@ -50,6 +52,14 @@ The process exposes **Prometheus** text exposition on **`GET /metrics`** (separa
 
 - **`METRICS_ADDR`**: `host:port` (default **`127.0.0.1:9090`**). Example scrape: `curl -s http://127.0.0.1:9090/metrics`.
 - Counters/gauges/histograms include in-flight append tracking (`quote_ledger_in_flight_appends`), append stream outcomes, subscribe opens, and append-one latency.
+
+### Auth (`QUOTE_LEDGER_AUTH_TOKEN`)
+
+When `QUOTE_LEDGER_AUTH_TOKEN` is set, `AppendCommands` and `SubscribeQuote` require gRPC metadata:
+
+- `authorization: Bearer <token>`
+- If unset, the service behaves as before (no auth gate).
+- Reflection remains enabled to preserve local exploration workflows.
 
 ### Shutdown
 
@@ -74,6 +84,10 @@ The server registers **gRPC reflection** (descriptor set from `build.rs`). With 
 ```bash
 grpcurl -plaintext localhost:50051 list
 grpcurl -plaintext localhost:50051 describe quote_ledger.v1.QuoteLedgerService
+
+# If auth is enabled:
+grpcurl -plaintext -H "authorization: Bearer ${QUOTE_LEDGER_AUTH_TOKEN}" \
+  localhost:50051 quote_ledger.v1.QuoteLedgerService/SubscribeQuote
 ```
 
 The server shuts down on **Ctrl+C** after **draining in-flight appends** (bounded wait), then `serve_with_shutdown` completes.

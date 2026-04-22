@@ -11,7 +11,8 @@ use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use tonic::transport::Server;
 use tonic_reflection::server::Builder as ReflectionBuilder;
 
-use quote_ledger::{grpc_server, sqlite, LedgerService, FILE_DESCRIPTOR_SET};
+use quote_ledger::v1::quote_ledger_service_server::QuoteLedgerServiceServer;
+use quote_ledger::{sqlite, AuthInterceptor, LedgerService, FILE_DESCRIPTOR_SET};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -52,9 +53,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let conn = sqlite::open_and_migrate(&db_path)?;
     tracing::info!(path = %db_path, "sqlite ready");
 
+    let auth = AuthInterceptor::from_env_var("QUOTE_LEDGER_AUTH_TOKEN")
+        .map_err(|e| format!("QUOTE_LEDGER_AUTH_TOKEN: {e}"))?;
+
     let ledger_service = LedgerService::new(conn);
     let in_flight = ledger_service.in_flight_counter();
-    let ledger = grpc_server(ledger_service);
+    let ledger = QuoteLedgerServiceServer::with_interceptor(ledger_service, auth);
 
     let reflection = ReflectionBuilder::configure()
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)

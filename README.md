@@ -34,8 +34,21 @@ Run the gRPC server (creates/applies SQLite migrations):
 
 ```bash
 export QUOTE_LEDGER_DB="${TMPDIR:-/tmp}/quote_ledger.db"
+# Optional: Prometheus scrape endpoint (default 127.0.0.1:9090)
+export METRICS_ADDR=127.0.0.1:9090
 cargo run -- 127.0.0.1:50051
 ```
+
+### Metrics (`METRICS_ADDR`)
+
+The process exposes **Prometheus** text exposition on **`GET /metrics`** (separate HTTP listener from gRPC).
+
+- **`METRICS_ADDR`**: `host:port` (default **`127.0.0.1:9090`**). Example scrape: `curl -s http://127.0.0.1:9090/metrics`.
+- Counters/gauges/histograms include in-flight append tracking (`quote_ledger_in_flight_appends`), append stream outcomes, subscribe opens, and append-one latency.
+
+### Shutdown
+
+On **Ctrl+C**, the gRPC server does **not** begin tonic shutdown until **in-flight `append_one` calls** drop to zero, or **30 seconds** elapse (whichever comes first). After that, `serve_with_shutdown` completes and the process exits.
 
 ## CI
 
@@ -58,7 +71,7 @@ grpcurl -plaintext localhost:50051 list
 grpcurl -plaintext localhost:50051 describe quote_ledger.v1.QuoteLedgerService
 ```
 
-The server shuts down cleanly on **Ctrl+C** (`serve_with_shutdown`).
+The server shuts down on **Ctrl+C** after **draining in-flight appends** (bounded wait), then `serve_with_shutdown` completes.
 
 ## License
 

@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
+use metrics::{counter, gauge, histogram};
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio::sync::Mutex as TokioMutex;
@@ -23,9 +26,47 @@ use crate::v1::{
     QuoteTail, QuoteUpdate, StoredEvent, SubscribeQuoteRequest,
 };
 
+struct InFlightGuard {
+    counter: Arc<AtomicUsize>,
+}
+
+impl InFlightGuard {
+    fn enter(counter: &Arc<AtomicUsize>) -> Self {
+        let n = counter.fetch_add(1, Ordering::SeqCst) + 1;
+        gauge!("quote_ledger_in_flight_appends").set(n as f64);
+        Self {
+            counter: counter.clone(),
+        }
+    }
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        let prev = self.counter.fetch_sub(1, Ordering::SeqCst);
+        let n = prev.saturating_sub(1);
+        gauge!("quote_ledger_in_flight_appends").set(n as f64);
+    }
+}
+
+struct AppendOneLatency(Instant);
+
+impl AppendOneLatency {
+    fn start() -> Self {
+        Self(Instant::now())
+    }
+}
+
+impl Drop for AppendOneLatency {
+    fn drop(&mut self) {
+        histogram!("quote_ledger_append_one_duration_seconds")
+            .record(self.0.elapsed().as_secs_f64());
+    }
+}
+
 pub struct LedgerInner {
     conn: Arc<std::sync::Mutex<rusqlite::Connection>>,
     bus: Arc<TokioMutex<HashMap<String, watch::Sender<u64>>>>,
+    pub in_flight_appends: Arc<AtomicUsize>,
 }
 
 impl LedgerInner {
@@ -33,6 +74,7 @@ impl LedgerInner {
         Self {
             conn: Arc::new(std::sync::Mutex::new(conn)),
             bus: Arc::new(TokioMutex::new(HashMap::new())),
+            in_flight_appends: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -68,6 +110,9 @@ impl LedgerInner {
         client_command_id: &str,
         cmd: &QuoteCommand,
     ) -> Result<Vec<StoredEvent>, Status> {
+        let _in_flight = InFlightGuard::enter(&self.in_flight_appends);
+        let _latency = AppendOneLatency::start();
+
         let quote_id_owned = quote_id.to_string();
         let client_owned = client_command_id.to_string();
 
@@ -107,6 +152,7 @@ impl LedgerInner {
             self.publish_head(quote_id, last.seq).await;
         }
 
+        counter!("quote_ledger_append_one_commits_total").increment(1);
         Ok(committed)
     }
 }
@@ -121,6 +167,14 @@ impl LedgerService {
             inner: Arc::new(LedgerInner::new(conn)),
         }
     }
+
+    pub fn in_flight_appends(&self) -> usize {
+        self.inner.in_flight_appends.load(Ordering::SeqCst)
+    }
+
+    pub fn in_flight_counter(&self) -> Arc<AtomicUsize> {
+        self.inner.in_flight_appends.clone()
+    }
 }
 
 #[tonic::async_trait]
@@ -129,6 +183,7 @@ impl QuoteLedgerService for LedgerService {
         &self,
         request: Request<Streaming<AppendCommandRequest>>,
     ) -> Result<Response<AppendCommandsResponse>, Status> {
+        let stream_started = Instant::now();
         let mut stream = request.into_inner();
         let mut quote_id: Option<String> = None;
         let mut last_committed_seq: u64 = 0;
@@ -175,9 +230,14 @@ impl QuoteLedgerService for LedgerService {
         }
 
         if quote_id.is_none() {
+            counter!("quote_ledger_append_commands_streams_total", "result" => "invalid")
+                .increment(1);
             return Err(Status::invalid_argument("append_commands stream was empty"));
         }
 
+        counter!("quote_ledger_append_commands_streams_total", "result" => "ok").increment(1);
+        histogram!("quote_ledger_append_commands_stream_duration_seconds")
+            .record(stream_started.elapsed().as_secs_f64());
         Ok(Response::new(AppendCommandsResponse {
             last_committed_seq,
             committed: all_committed,
@@ -196,6 +256,7 @@ impl QuoteLedgerService for LedgerService {
             return Err(Status::invalid_argument("quote_id is required"));
         }
 
+        counter!("quote_ledger_subscribe_streams_total").increment(1);
         let inner = self.inner.clone();
         let qid = req.quote_id.clone();
         let after = req.after_seq;

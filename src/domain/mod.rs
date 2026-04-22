@@ -174,4 +174,34 @@ mod tests {
         .unwrap_err();
         assert_eq!(err, DomainError::QuoteAlreadyFinalized);
     }
+
+    use proptest::prelude::*;
+
+    #[test]
+    fn proptest_create_quote_emits_single_created_event() {
+        proptest!(|(currency in "[A-Z]{3}", jur in "US|US-CA|DE|JP")| {
+            let cmd = DomainCommand::CreateQuote {
+                currency_code: currency.clone(),
+                jurisdiction_id: jur.clone(),
+            };
+            let events = command_to_events(&QuoteState::default(), &cmd).map_err(|e| {
+                proptest::test_runner::TestCaseError::fail(format!("{e:?}"))
+            })?;
+            prop_assert_eq!(events.len(), 1);
+            let is_created = matches!(&events[0], DomainEvent::QuoteCreated { .. });
+            prop_assert!(is_created);
+            if let DomainEvent::QuoteCreated {
+                currency_code,
+                jurisdiction_id,
+            } = &events[0]
+            {
+                prop_assert_eq!(currency_code, &currency);
+                prop_assert_eq!(jurisdiction_id, &jur);
+            }
+            let s = reduce(&QuoteState::default(), &events[0]).map_err(|e| {
+                proptest::test_runner::TestCaseError::fail(format!("{e:?}"))
+            })?;
+            prop_assert!(s.is_created());
+        });
+    }
 }

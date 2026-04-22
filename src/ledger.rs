@@ -16,8 +16,8 @@ use tracing::instrument;
 
 use crate::domain;
 use crate::mapping::{
-    domain_error_to_status, domain_event_to_proto, proto_command_to_domain, quote_state_to_view,
-    replay_stored_to_state, store_error_to_status,
+    domain_event_to_proto, proto_command_to_domain, quote_state_to_view, replay_stored_to_state,
+    store_error_to_status,
 };
 use crate::store;
 use crate::v1::quote_ledger_service_server::{QuoteLedgerService, QuoteLedgerServiceServer};
@@ -29,6 +29,50 @@ use crate::v1::{
 const MAX_ID_LEN: usize = 128;
 const DEFAULT_APPEND_IDLE_TIMEOUT_MS: u64 = 10_000;
 const DEFAULT_APPEND_MAX_COMMANDS: usize = 512;
+
+/// Bounded retries for SQLite reads on the subscribe pump. Transient failures must not skip seqs.
+const SUBSCRIBE_DB_MAX_ATTEMPTS: u32 = 8;
+const SUBSCRIBE_DB_BACKOFF_START_MS: u64 = 10;
+const SUBSCRIBE_DB_BACKOFF_CAP_MS: u64 = 500;
+
+async fn subscribe_load_between(
+    inner: &LedgerInner,
+    quote_id: &str,
+    after_exclusive: u64,
+    upto_inclusive: u64,
+) -> Result<Vec<StoredEvent>, Status> {
+    let mut backoff_ms = SUBSCRIBE_DB_BACKOFF_START_MS;
+    let mut last_err: Option<Status> = None;
+
+    for attempt in 0..SUBSCRIBE_DB_MAX_ATTEMPTS {
+        if attempt > 0 {
+            counter!("quote_ledger_subscribe_db_retries_total").increment(1);
+            tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+            backoff_ms = (backoff_ms.saturating_mul(2)).min(SUBSCRIBE_DB_BACKOFF_CAP_MS);
+        }
+
+        match inner
+            .db({
+                let q = quote_id.to_string();
+                move |c| store::load_stored_events_between(c, &q, after_exclusive, upto_inclusive)
+            })
+            .await
+        {
+            Ok(events) => return Ok(events),
+            Err(e) => {
+                counter!("quote_ledger_subscribe_db_load_failures_total").increment(1);
+                last_err = Some(e);
+            }
+        }
+    }
+
+    counter!(
+        "quote_ledger_subscribe_stream_terminal_errors_total",
+        "cause" => "db_load_between"
+    )
+    .increment(1);
+    Err(last_err.unwrap_or_else(|| Status::internal("subscribe db load failed")))
+}
 
 fn validate_identifier(field: &'static str, value: &str) -> Result<(), Status> {
     if value.trim().is_empty() {
@@ -160,35 +204,42 @@ impl LedgerInner {
         let quote_id_owned = quote_id.to_string();
         let client_owned = client_command_id.to_string();
 
-        if let Some(committed) = self
-            .db({
-                let q = quote_id_owned.clone();
-                let c = client_owned.clone();
-                move |conn| store::try_load_idempotent_events(conn, &q, &c)
-            })
-            .await?
-        {
-            return Ok(committed);
-        }
-
         let domain_cmd = proto_command_to_domain(cmd)?;
 
-        let all = self
-            .db({
-                let q = quote_id_owned.clone();
-                move |c| store::load_stored_events(c, &q)
-            })
-            .await?;
-
-        let state = replay_stored_to_state(&all).map_err(store_error_to_status)?;
-        let events =
-            domain::command_to_events(&state, &domain_cmd).map_err(domain_error_to_status)?;
-        let proto_events: Vec<crate::v1::QuoteEvent> =
-            events.iter().map(domain_event_to_proto).collect();
-
         let committed = self
-            .db(move |c| {
-                store::append_command_events(c, &quote_id_owned, &client_owned, &proto_events)
+            .db({
+                let quote_id_owned = quote_id_owned.clone();
+                let client_owned = client_owned.clone();
+                let domain_cmd = domain_cmd.clone();
+                move |c| {
+                    if let Some((first_seq, _last_seq)) =
+                        store::idempotency_lookup(c, &quote_id_owned, &client_owned)?
+                    {
+                        let before = store::load_stored_events_between(
+                            c,
+                            &quote_id_owned,
+                            0,
+                            first_seq.saturating_sub(1),
+                        )?;
+                        let state_before = replay_stored_to_state(&before)?;
+                        let events = domain::command_to_events(&state_before, &domain_cmd)?;
+                        let proto_events: Vec<crate::v1::QuoteEvent> =
+                            events.iter().map(domain_event_to_proto).collect();
+                        return store::append_command_events(
+                            c,
+                            &quote_id_owned,
+                            &client_owned,
+                            &proto_events,
+                        );
+                    }
+
+                    let all = store::load_stored_events(c, &quote_id_owned)?;
+                    let state = replay_stored_to_state(&all)?;
+                    let events = domain::command_to_events(&state, &domain_cmd)?;
+                    let proto_events: Vec<crate::v1::QuoteEvent> =
+                        events.iter().map(domain_event_to_proto).collect();
+                    store::append_command_events(c, &quote_id_owned, &client_owned, &proto_events)
+                }
             })
             .await?;
 
@@ -317,6 +368,7 @@ impl QuoteLedgerService for LedgerService {
     type SubscribeQuoteStream =
         Pin<Box<dyn Stream<Item = Result<QuoteUpdate, Status>> + Send + 'static>>;
 
+    #[instrument(skip(self, request))]
     async fn subscribe_quote(
         &self,
         request: Request<SubscribeQuoteRequest>,
@@ -421,29 +473,30 @@ impl QuoteLedgerService for LedgerService {
 
             let head_now = *rx_watch.borrow();
             if head_now > watermark {
-                match inner2
-                    .db({
-                        let q = qid2.clone();
-                        move |c| store::load_stored_events_between(c, &q, watermark, head_now)
-                    })
-                    .await
-                {
-                    Ok(chunk) if !chunk.is_empty() => {
-                        let from = watermark;
-                        let to = chunk.last().map(|e| e.seq).unwrap_or(from);
-                        let tail = QuoteUpdate {
-                            kind: Some(quote_update::Kind::Tail(QuoteTail {
-                                from_seq_exclusive: from,
-                                to_seq_inclusive: to,
-                                events: chunk,
-                            })),
-                        };
-                        if !push_update(&tx, tail).await {
-                            return;
+                match subscribe_load_between(&inner2, &qid2, watermark, head_now).await {
+                    Ok(chunk) => {
+                        if chunk.is_empty() {
+                            watermark = head_now;
+                        } else {
+                            let from = watermark;
+                            let to = chunk.last().map(|e| e.seq).unwrap_or(from);
+                            let tail = QuoteUpdate {
+                                kind: Some(quote_update::Kind::Tail(QuoteTail {
+                                    from_seq_exclusive: from,
+                                    to_seq_inclusive: to,
+                                    events: chunk,
+                                })),
+                            };
+                            if !push_update(&tx, tail).await {
+                                return;
+                            }
+                            watermark = head_now;
                         }
-                        watermark = head_now;
                     }
-                    _ => watermark = head_now,
+                    Err(status) => {
+                        let _ = tx.send(Err(status)).await;
+                        return;
+                    }
                 }
             }
 
@@ -456,16 +509,12 @@ impl QuoteLedgerService for LedgerService {
                     continue;
                 }
 
-                let chunk = match inner2
-                    .db({
-                        let q = qid2.clone();
-                        let wm = watermark;
-                        move |c| store::load_stored_events_between(c, &q, wm, head)
-                    })
-                    .await
-                {
+                let chunk = match subscribe_load_between(&inner2, &qid2, watermark, head).await {
                     Ok(c) => c,
-                    Err(_) => continue,
+                    Err(status) => {
+                        let _ = tx.send(Err(status)).await;
+                        break;
+                    }
                 };
 
                 if chunk.is_empty() {
@@ -500,4 +549,21 @@ impl QuoteLedgerService for LedgerService {
 
 pub fn grpc_server(service: LedgerService) -> QuoteLedgerServiceServer<LedgerService> {
     QuoteLedgerServiceServer::new(service)
+}
+
+#[cfg(test)]
+mod subscribe_load_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn subscribe_load_between_empty_range() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("sub.db");
+        let conn = crate::sqlite::open_and_migrate(db.to_str().expect("utf8")).expect("migrate");
+        let inner = LedgerInner::new(conn);
+        let out = subscribe_load_between(&inner, "no-such-quote", 0, 0)
+            .await
+            .expect("ok");
+        assert!(out.is_empty());
+    }
 }

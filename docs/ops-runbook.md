@@ -14,6 +14,10 @@ Use these indicators from `/metrics`:
   - sustained growth indicates writer pressure or downstream lock contention.
 - **Subscribe load trend**: `quote_ledger_subscribe_streams_total`
   - useful for traffic-shift/context during incidents.
+- **Subscribe DB resilience**: `quote_ledger_subscribe_db_retries_total`, `quote_ledger_subscribe_db_load_failures_total`, `quote_ledger_subscribe_stream_terminal_errors_total`
+  - retries indicate transient SQLite pressure; terminal errors mean clients should reconnect and operators should investigate storage health.
+- **Global gRPC rate limiting** (when `GRPC_RATE_LIMIT_RPS` is set): `quote_ledger_grpc_rate_limited_total`
+  - sustained growth means legitimate traffic is competing for a low cap, or an abusive client; tune `GRPC_RATE_LIMIT_RPS` or add edge rate limiting.
 
 ## 2) Alert suggestions
 

@@ -1,0 +1,44 @@
+# Example Prometheus alerting rules for quote-ledger (v1.2).
+# Copy into your Prometheus `rule_files` after validating thresholds for your environment.
+
+groups:
+  - name: quote-ledger
+    rules:
+      - alert: QuoteLedgerAppendLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(quote_ledger_append_one_duration_seconds_bucket[10m])) by (le)
+          ) > 0.25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "quote-ledger append p95 latency above 250ms"
+
+      - alert: QuoteLedgerAppendStreamErrors
+        expr: |
+          sum(rate(quote_ledger_append_commands_streams_total{result!="ok"}[5m]))
+            /
+          sum(rate(quote_ledger_append_commands_streams_total[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "quote-ledger append_commands non-ok ratio > 5%"
+
+      - alert: QuoteLedgerSubscribeDbTerminal
+        expr: sum(rate(quote_ledger_subscribe_stream_terminal_errors_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "quote-ledger subscribe DB terminal errors observed"
+
+      - alert: QuoteLedgerGrpcRateLimited
+        expr: sum(rate(quote_ledger_grpc_rate_limited_total[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "quote-ledger global gRPC rate limit is rejecting traffic (tune GRPC_RATE_LIMIT_RPS or add edge limiting)"

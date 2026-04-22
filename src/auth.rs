@@ -33,6 +33,11 @@ impl AuthInterceptor {
         }
     }
 
+    /// Validate auth metadata (used by [`crate::grpc_interceptor::LedgerGrpcInterceptor`]).
+    pub fn intercept(&self, request: Request<()>) -> Result<Request<()>, Status> {
+        self.check_request(request)
+    }
+
     fn check_request(&self, request: Request<()>) -> Result<Request<()>, Status> {
         let Some(expected) = self.expected_token.as_ref() else {
             return Ok(request);
@@ -56,7 +61,9 @@ impl AuthInterceptor {
                 "authorization scheme must be Bearer",
             ));
         }
-        if token != expected {
+        if expected.len() != token.len()
+            || !constant_time_eq::constant_time_eq(expected.as_bytes(), token.as_bytes())
+        {
             return Err(Status::unauthenticated("invalid bearer token"));
         }
 
@@ -66,6 +73,6 @@ impl AuthInterceptor {
 
 impl Interceptor for AuthInterceptor {
     fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
-        self.check_request(request)
+        self.intercept(request)
     }
 }

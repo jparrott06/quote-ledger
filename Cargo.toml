@@ -11,14 +11,16 @@ axum = "0.7"
 metrics = "0.23"
 metrics-exporter-prometheus = "0.15"
 prost = "0.13"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "test-util"] }
 tokio-stream = { version = "0.1", features = ["net", "sync"] }
-tonic = { version = "0.12", features = ["transport"] }
+tonic = { version = "0.12", features = ["transport", "tls"] }
 tonic-reflection = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 thiserror = "1"
+constant_time_eq = "0.3"
+governor = "0.10"
 
 [build-dependencies]
 tonic-build = "0.12"
@@ -26,3 +28,4 @@ protoc-bin-vendored = "3"
 
 [dev-dependencies]
 tempfile = "3"
+proptest = "1"

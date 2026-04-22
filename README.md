@@ -94,6 +94,12 @@ Configure branch protection to require the first four checks before merging to `
 - **Gaps:** no property/fuzz tests yet; no sustained long-run soak benchmark yet; **no enforced line-coverage floor** in CI (the `coverage` job reports numbers only).
 - **Local:** `cargo install cargo-llvm-cov` then `cargo llvm-cov test --workspace --all-features --html` for an HTML report.
 
+## Ops runbook (v1.1)
+
+- Runbook: `docs/ops-runbook.md`
+- Backup script: `scripts/backup_sqlite.sh <db_path> <backup_path>`
+- Restore script: `scripts/restore_sqlite.sh <backup_path> <db_path>`
+
 ## grpcurl (reflection)
 
 The server registers **gRPC reflection** (descriptor set from `build.rs`). With `grpcurl`:

@@ -171,5 +171,6 @@ pub fn store_error_to_status(err: crate::error::StoreError) -> Status {
         StoreError::Corrupt(_) => Status::data_loss(err.to_string()),
         StoreError::Sqlite(_) => Status::internal(err.to_string()),
         StoreError::Domain(err) => domain_error_to_status(err),
+        StoreError::IdempotencyConflict { .. } => Status::failed_precondition(err.to_string()),
     }
 }

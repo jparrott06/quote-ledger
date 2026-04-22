@@ -34,17 +34,6 @@ pub fn load_stored_events(
     Ok(out)
 }
 
-pub fn try_load_idempotent_events(
-    conn: &Connection,
-    quote_id: &str,
-    client_command_id: &str,
-) -> Result<Option<Vec<StoredEvent>>, StoreError> {
-    let Some((first, last)) = idempotency_lookup(conn, quote_id, client_command_id)? else {
-        return Ok(None);
-    };
-    Ok(Some(load_events_in_seq_range(conn, quote_id, first, last)?))
-}
-
 pub fn idempotency_lookup(
     conn: &Connection,
     quote_id: &str,
@@ -90,6 +79,32 @@ fn event_type_for(ev: &QuoteEvent) -> &'static str {
 }
 
 /// Append new events for a command, or return previously stored events if idempotent replay.
+fn encode_quote_event(ev: &QuoteEvent) -> Result<Vec<u8>, StoreError> {
+    let mut buf = Vec::new();
+    ev.encode(&mut buf)
+        .map_err(|e| StoreError::Corrupt(e.to_string()))?;
+    Ok(buf)
+}
+
+fn same_command_payloads(
+    existing: &[StoredEvent],
+    incoming: &[QuoteEvent],
+) -> Result<bool, StoreError> {
+    if existing.len() != incoming.len() {
+        return Ok(false);
+    }
+    for (stored, new_ev) in existing.iter().zip(incoming.iter()) {
+        let old_ev = stored
+            .event
+            .as_ref()
+            .ok_or_else(|| StoreError::Corrupt("stored event missing payload".into()))?;
+        if encode_quote_event(old_ev)? != encode_quote_event(new_ev)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 pub fn append_command_events(
     conn: &mut Connection,
     quote_id: &str,
@@ -97,7 +112,14 @@ pub fn append_command_events(
     events: &[QuoteEvent],
 ) -> Result<Vec<StoredEvent>, StoreError> {
     if let Some((first, last)) = idempotency_lookup(conn, quote_id, client_command_id)? {
-        return load_events_in_seq_range(conn, quote_id, first, last);
+        let existing = load_events_in_seq_range(conn, quote_id, first, last)?;
+        if same_command_payloads(&existing, events)? {
+            return Ok(existing);
+        }
+        return Err(StoreError::IdempotencyConflict {
+            quote_id: quote_id.to_string(),
+            client_command_id: client_command_id.to_string(),
+        });
     }
 
     if events.is_empty() {

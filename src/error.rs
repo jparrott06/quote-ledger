@@ -16,4 +16,12 @@ pub enum StoreError {
 
     #[error("corrupt stored payload: {0}")]
     Corrupt(String),
+
+    #[error(
+        "idempotency key reused with different command payload (quote_id={quote_id}, client_command_id={client_command_id})"
+    )]
+    IdempotencyConflict {
+        quote_id: String,
+        client_command_id: String,
+    },
 }

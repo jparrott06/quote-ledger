@@ -39,10 +39,21 @@ Run the gRPC server (creates/applies SQLite migrations):
 
 ```bash
 export QUOTE_LEDGER_DB="${TMPDIR:-/tmp}/quote_ledger.db"
+# Optional: explicit gRPC listen addr (avoids argv parsing in tests / containers)
+export GRPC_LISTEN_ADDR=127.0.0.1:50051
 # Optional: Prometheus scrape endpoint (default 127.0.0.1:9090)
 export METRICS_ADDR=127.0.0.1:9090
 # Optional: require `authorization: Bearer <token>` on ledger RPCs
 export QUOTE_LEDGER_AUTH_TOKEN=dev-local-token
+# Optional: disable gRPC reflection in locked-down environments (default: enabled)
+export QUOTE_LEDGER_REFLECTION=false
+# Optional: mTLS / TLS for gRPC (both must be set)
+# export GRPC_TLS_CERT=/path/to/cert.pem
+# export GRPC_TLS_KEY=/path/to/key.pem
+# Optional: fail startup on unknown QUOTE_LEDGER_* / APPEND_* / GRPC_* env keys (typos)
+# export STRICT_CONFIG=true
+# Optional: process-wide cap on accepted gRPC RPCs per second (all methods share one bucket)
+# export GRPC_RATE_LIMIT_RPS=500
 # Reliability defaults (optional overrides shown)
 export APPEND_IDLE_TIMEOUT_MS=10000
 export APPEND_MAX_COMMANDS=512
@@ -82,6 +93,19 @@ On **Ctrl+C**, the gRPC server does **not** begin tonic shutdown until **in-flig
 
 `AppendCommands` is safe to retry for transient transport failures when each command keeps the same `(quote_id, client_command_id)` pair. The service deduplicates by that idempotency key and returns the already committed events.
 
+Reusing the same `(quote_id, client_command_id)` with a **different** command payload returns `FAILED_PRECONDITION` (idempotency conflict).
+
+### SubscribeQuote semantics
+
+- **`after_seq`**: exclusive lower bound; `0` means “from the beginning”. If `after_seq` is greater than the current head, the call fails with `INVALID_ARGUMENT`.
+- **Delivery**: the stream first may emit a **tail** of historical events (if needed), then a **snapshot** (`QuoteView` + `last_seq`), then **tails** for live commits. On persistent read failures, the server retries bounded times; if reads still fail, the stream ends with an error status — **reconnect with the last processed `seq`** (from tail or snapshot) as `after_seq`.
+- **Metrics**: see `docs/ops-runbook.md` for subscribe DB retry / terminal error counters.
+
+## API versioning & client migrations
+
+- Policy: `docs/api-versioning.md`
+- Checklist: `docs/client-migration-checklist.md`
+
 ## CI
 
 Pull requests run **fmt**, **clippy**, **test** (includes gRPC smoke), **release-build-smoke**, and a **`coverage`** job that prints an **llvm-cov** summary (line/region totals — informational unless you add a threshold).
@@ -97,6 +121,8 @@ Configure branch protection to require the first four checks before merging to `
 ## Ops runbook (v1.1)
 
 - Runbook: `docs/ops-runbook.md`
+- SQLite migrations (operator notes): `docs/database-migrations.md`
+- Example Prometheus alerts: `docs/prometheus/alerts.example.yml`
 - Backup script: `scripts/backup_sqlite.sh <db_path> <backup_path>`
 - Restore script: `scripts/restore_sqlite.sh <backup_path> <db_path>`
 

@@ -8,13 +8,17 @@ pub mod domain;
 pub mod sqlite;
 
 mod auth;
+mod config;
 mod error;
+mod grpc_interceptor;
 mod ledger;
 mod mapping;
 mod store;
 
 pub use auth::AuthInterceptor;
+pub use config::ServiceConfig;
 pub use error::StoreError;
+pub use grpc_interceptor::LedgerGrpcInterceptor;
 pub use ledger::{grpc_server, LedgerService, ReliabilityLimits};
 
 /// gRPC reflection (`grpcurl` / Postman) — generated in `build.rs`.

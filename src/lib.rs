@@ -7,11 +7,13 @@ pub mod v1 {
 pub mod domain;
 pub mod sqlite;
 
+mod auth;
 mod error;
 mod ledger;
 mod mapping;
 mod store;
 
+pub use auth::AuthInterceptor;
 pub use error::StoreError;
 pub use ledger::{grpc_server, LedgerService};
 

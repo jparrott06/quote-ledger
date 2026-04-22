@@ -11,7 +11,10 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 use tonic::Code;
 
-async fn start_server(limits: ReliabilityLimits) -> String {
+async fn start_server_with_startup_delay(
+    limits: ReliabilityLimits,
+    startup_delay: Duration,
+) -> String {
     let dir = Box::leak(Box::new(tempfile::tempdir().expect("tempdir")));
     let db = dir.path().join("reliability.db");
     let conn = sqlite::open_and_migrate(db.to_str().expect("utf8 path")).expect("migrate");
@@ -29,8 +32,14 @@ async fn start_server(limits: ReliabilityLimits) -> String {
             .expect("server");
     });
 
-    tokio::time::sleep(Duration::from_millis(150)).await;
+    if !startup_delay.is_zero() {
+        tokio::time::sleep(startup_delay).await;
+    }
     format!("http://{addr}")
+}
+
+async fn start_server(limits: ReliabilityLimits) -> String {
+    start_server_with_startup_delay(limits, Duration::from_millis(150)).await
 }
 
 #[tokio::test]
@@ -48,6 +57,40 @@ async fn append_stream_times_out_when_idle() {
     let err = client
         .append_commands(ReceiverStream::new(rx))
         .await
+        .expect_err("idle stream should timeout");
+    assert_eq!(err.code(), Code::DeadlineExceeded);
+}
+
+/// Append idle timeout is driven by Tokio timers; with a paused clock we can assert behavior
+/// without sleeping for hundreds of milliseconds of wall time (see L-03).
+#[tokio::test(start_paused = true)]
+async fn append_stream_idle_timeout_with_paused_clock() {
+    let endpoint = start_server_with_startup_delay(
+        ReliabilityLimits {
+            append_idle_timeout: Duration::from_millis(100),
+            append_max_commands: 8,
+        },
+        Duration::ZERO,
+    )
+    .await;
+
+    for _ in 0..8 {
+        tokio::task::yield_now().await;
+    }
+
+    let mut client = QuoteLedgerServiceClient::connect(endpoint)
+        .await
+        .expect("connect");
+
+    let (_tx, rx) = tokio::sync::mpsc::channel::<AppendCommandRequest>(1);
+    let append = tokio::spawn(async move { client.append_commands(ReceiverStream::new(rx)).await });
+
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_millis(250)).await;
+
+    let err = append
+        .await
+        .expect("join append task")
         .expect_err("idle stream should timeout");
     assert_eq!(err.code(), Code::DeadlineExceeded);
 }

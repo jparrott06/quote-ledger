@@ -300,7 +300,11 @@ impl QuoteLedgerService for LedgerService {
             {
                 Ok(Ok(Some(m))) => m,
                 Ok(Ok(None)) => break,
-                Ok(Err(e)) => return Err(e),
+                Ok(Err(e)) => {
+                    counter!("quote_ledger_append_commands_streams_total", "result" => "transport_error")
+                        .increment(1);
+                    return Err(e);
+                }
                 Err(_) => {
                     counter!("quote_ledger_append_commands_streams_total", "result" => "timeout")
                         .increment(1);

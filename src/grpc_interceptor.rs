@@ -1,4 +1,4 @@
-//! Composite gRPC interceptor: optional process-wide request rate limit, then auth.
+//! Composite gRPC interceptor: auth first, then optional process-wide request rate limit.
 
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -31,6 +31,7 @@ impl LedgerGrpcInterceptor {
 
 impl Interceptor for LedgerGrpcInterceptor {
     fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
+        let request = self.auth.intercept(request)?;
         if let Some(lim) = &self.limiter {
             if lim.check().is_err() {
                 counter!("quote_ledger_grpc_rate_limited_total").increment(1);
@@ -39,7 +40,7 @@ impl Interceptor for LedgerGrpcInterceptor {
                 ));
             }
         }
-        self.auth.intercept(request)
+        Ok(request)
     }
 }
 

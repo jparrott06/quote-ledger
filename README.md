@@ -90,8 +90,8 @@ Configure branch protection to require the first four checks before merging to `
 
 ## Coverage (honest picture)
 
-- **Strengths:** domain logic has focused **unit tests**; **integration tests** cover subscribe (empty), append+idempotency, and a full **pricing/finalize** path against a real SQLite DB + tonic server.
-- **Gaps:** no property/fuzz tests yet; no load or fault-injection tests; **no enforced line-coverage floor** in CI (the `coverage` job reports numbers only).
+- **Strengths:** domain logic has focused **unit tests**; **integration tests** cover subscribe (empty), append+idempotency, pricing/finalize, auth/reliability controls, and deterministic **concurrent append** + fault-path checks against real SQLite + tonic server.
+- **Gaps:** no property/fuzz tests yet; no sustained long-run soak benchmark yet; **no enforced line-coverage floor** in CI (the `coverage` job reports numbers only).
 - **Local:** `cargo install cargo-llvm-cov` then `cargo llvm-cov test --workspace --all-features --html` for an HTML report.
 
 ## grpcurl (reflection)
